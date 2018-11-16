@@ -1049,3 +1049,723 @@ if i % 50 == 0:
 还有一种专门用在神经网络的正规化的方法, 叫作 dropout. 在训练的时候, 我们随机忽略掉一些神经元和神经联结 , 是这个神经网络变得”不完整”. 用一个不完整的神经网络训练一次.
 
 到第二次再随机忽略另一些, 变成另一个不完整的神经网络. 有了这些随机 drop 掉的规则, 我们可以想象其实每次训练的时候, 我们都让每一次预测结果都不会依赖于其中某部分特定的神经元. 像l1, l2正规化一样, 过度依赖的 W , 也就是训练参数的数值会很大, l1, l2会惩罚这些大的 参数. Dropout 的做法是从根本上让神经网络没机会过度依赖.
+
+## 16.Dropout 解决 overfitting
+
+## 要定 
+
+Overfitting 也被称为过度学习，过度拟合。 它是机器学习中常见的问题。 举个Classification（分类）的例子。
+
+[![Dropout 解决 overfitting](https://morvanzhou.github.io/static/results/tensorflow/5_02_1.png)](https://morvanzhou.github.io/static/results/tensorflow/5_02_1.png)
+
+图中黑色曲线是正常模型，绿色曲线就是overfitting模型。尽管绿色曲线很精确的区分了所有的训练数据，但是并没有描述数据的整体特征，对新测试数据的适应性较差。
+
+举个Regression (回归)的例子，
+
+[![Dropout 解决 overfitting](https://morvanzhou.github.io/static/results/tensorflow/5_02_2.png)](https://morvanzhou.github.io/static/results/tensorflow/5_02_2.png)
+
+第三条曲线存在overfitting问题，尽管它经过了所有的训练点，但是不能很好的反应数据的趋势，预测能力严重不足。 TensorFlow提供了强大的dropout方法来解决overfitting问题。
+
+## 建立 dropout 层 
+
+本次内容需要使用一下 sklearn 数据库当中的数据, 没有安装 sklearn 的同学可以参考一下[这个教程](https://morvanzhou.github.io/tutorials/machine-learning/sklearn/1-2-install/) 安装一下. 然后 `import` 以下模块.
+
+```
+import tensorflow as tf
+from sklearn.datasets import load_digits
+from sklearn.cross_validation import train_test_split
+from sklearn.preprocessing import LabelBinarizer
+```
+
+```
+keep_prob = tf.placeholder(tf.float32)
+...
+...
+Wx_plus_b = tf.nn.dropout(Wx_plus_b, keep_prob)
+```
+
+这里的`keep_prob`是保留概率，即我们要保留的结果所占比例，它作为一个`placeholder`，在`run`时传入， 当`keep_prob=1`的时候，相当于100%保留，也就是dropout没有起作用。 下面我们分析一下程序结构，首先准备数据，
+
+```
+digits = load_digits()
+X = digits.data
+y = digits.target
+y = LabelBinarizer().fit_transform(y)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.3)
+```
+
+其中`X_train`是训练数据, `X_test`是测试数据。 然后添加隐含层和输出层
+
+```
+# add output layer
+l1 = add_layer(xs, 64, 50, 'l1', activation_function=tf.nn.tanh)
+prediction = add_layer(l1, 50, 10, 'l2', activation_function=tf.nn.softmax)
+```
+
+loss函数（即最优化目标函数）选用交叉熵函数。交叉熵用来衡量预测值和真实值的相似程度，如果完全相同，交叉熵就等于零。
+
+```
+cross_entropy = tf.reduce_mean(-tf.reduce_sum(ys * tf.log(prediction),
+                                              reduction_indices=[1]))  # loss
+```
+
+train方法（最优化算法）采用梯度下降法。
+
+```
+train_step = tf.train.GradientDescentOptimizer(0.5).minimize(cross_entropy)
+```
+
+## 训练 
+
+最后开始train，总共训练500次。
+
+```
+#在此处添加dropout。
+sess.run(train_step, feed_dict={xs: X_train, ys: y_train, keep_prob: 0.5})
+#sess.run(train_step, feed_dict={xs: X_train, ys: y_train, keep_prob: 1})
+```
+
+## 可视化结果 
+
+训练中`keep_prob=1`时，就可以暴露出overfitting问题。`keep_prob=0.5`时，`dropout`就发挥了作用。 我们可以两种参数分别运行程序，对比一下结果。
+
+当`keep_prob=1`时，模型对训练数据的适应性优于测试数据，存在overfitting，输出如下： 红线是 `train` 的误差, 蓝线是 `test` 的误差.
+
+[![Dropout 解决 overfitting](https://morvanzhou.github.io/static/results/tensorflow/5_02_3.png)](https://morvanzhou.github.io/static/results/tensorflow/5_02_3.png)
+
+当`keep_prob=0.5`时效果好了很多，输出如下：
+
+[![Dropout 解决 overfitting](https://morvanzhou.github.io/static/results/tensorflow/5_02_4.png)](https://morvanzhou.github.io/static/results/tensorflow/5_02_4.png)
+
+程序中用到了Tensorboard输出结果，可以参考前面教程:
+
+- [可视化好助手 Tensorboard 1](https://morvanzhou.github.io/tutorials/machine-learning/tensorflow/4-1-tensorboard1/)
+- [可视化好助手 Tensorboard 2](https://morvanzhou.github.io/tutorials/machine-learning/tensorflow/4-2-tensorboard2/)
+
+
+
+# 17.CNN
+
+## 定义卷积层的 weight bias 
+
+首先我们导入
+
+```
+import tensorflow as tf
+```
+
+采用的数据集依然是`tensorflow`里面的`mnist`数据集
+
+我们需要先导入它
+
+```
+from tensorflow.examples.tutorials.mnist import input_data
+```
+
+本次课程代码用到的数据集就是来自于它
+
+```
+mnist=input_data.read_data_sets('MNIST_data',one_hot=true)
+```
+
+接着呢，我们定义`Weight`变量，输入`shape`，返回变量的参数。其中我们使用`tf.truncted_normal`产生随机变量来进行初始化:
+
+```
+def weight_variable(shape): 
+	inital=tf.truncted_normal(shape,stddev=0.1)
+	return tf.Variable(initial)
+```
+
+同样的定义`biase`变量，输入`shape` ,返回变量的一些参数。其中我们使用`tf.constant`常量函数来进行初始化:
+
+```
+def bias_variable(shape): 
+	initial=tf.constant(0.1,shape=shape) 
+	return tf.Variable(initial)
+```
+
+定义卷积，`tf.nn.conv2d`函数是`tensoflow`里面的二维的卷积函数，`x`是图片的所有参数，`W`是此卷积层的权重，然后定义步长`strides=[1,1,1,1]`值，`strides[0]`和`strides[3]`的两个1是默认值，中间两个1代表padding时在x方向运动一步，y方向运动一步，padding采用的方式是`SAME`。
+
+```
+def conv2d(x,W):
+    #两种paddeing，SAME会保持大小不变，另一种valid会发生变化
+	return tf.nn.conv2d(x,W,strides=[1,1,1,1]，padding='SAME') 
+```
+
+## 定义 pooling 
+
+接着定义池化`pooling`，为了得到更多的图片信息，padding时我们选的是一次一步，也就是`strides[1]=strides[2]=1`，这样得到的图片尺寸没有变化，而我们希望压缩一下图片也就是参数能少一些从而减小系统的复杂度，因此我们采用`pooling`来稀疏化参数，也就是卷积神经网络中所谓的下采样层。`pooling `有两种，一种是最大值池化，一种是平均值池化，本例采用的是最大值池化`tf.max_pool()`。
+
+池化的核函数大小为2x2，因此`ksize=[1,2,2,1]`，步长为2，因此`strides=[1,2,2,1]`:
+
+```
+#第一个和第三个参数的1是默认值
+def max_poo_2x2(x): 
+	return tf.nn.max_pool(x,ksize=[1,2,2,1],strides=[1,2,2,1])
+```
+
+# 18.cnn
+
+这一次我们一层层的加上了不同的 layer. 分别是:
+
+1. convolutional layer1 + max pooling;
+2. convolutional layer2 + max pooling;
+3. fully connected layer1 + dropout;
+4. fully connected layer2 to prediction.
+
+我们利用上节课定义好的函数来构建我们的网络
+
+## 图片处理 
+
+首先呢，我们定义一下输入的`placeholder`
+
+```
+xs=tf.placeholder(tf.float32,[None,784])
+ys=tf.placeholder(tf.float32,[None,10])
+```
+
+我们还定义了`dropout`的`placeholder`，它是解决过拟合的有效手段
+
+```
+keep_prob=tf.placeholder(tf.float32)
+```
+
+接着呢，我们需要处理我们的`xs`，把`xs`的形状变成`[-1,28,28,1]`，-1代表先不考虑输入的图片例子多少这个维度，后面的1是channel的数量，因为我们输入的图片是黑白的，因此channel是1，例如如果是RGB图像，那么channel就是3。
+
+```
+x_image=tf.reshape(xs,[-1,28,28,1])
+```
+
+## 建立卷积层 
+
+接着我们定义第一层卷积,先定义本层的`Weight`,本层我们的卷积核patch的大小是5x5，因为黑白图片channel是1所以输入是1，输出是32个featuremap
+
+```
+W_conv1=weight_variable([5,5,1,32])
+```
+
+接着定义`bias`，它的大小是32个长度，因此我们传入它的`shape`为`[32]`
+
+```
+b_conv1=bias_variable([32])
+```
+
+定义好了`Weight`和`bias`，我们就可以定义卷积神经网络的第一个卷积层`h_conv1=conv2d(x_image,W_conv1)+b_conv1`,同时我们对`h_conv1`进行非线性处理，也就是激活函数来处理喽，这里我们用的是`tf.nn.relu`（修正线性单元）来处理，要注意的是，因为采用了`SAME`的padding方式，输出图片的大小没有变化依然是28x28，只是厚度变厚了，因此现在的输出大小就变成了28x28x32
+
+```
+h_conv1=tf.nn.relu(conv2d(x_image,W_conv1)+b_conv1)
+```
+
+最后我们再进行`pooling`的处理就ok啦，经过`pooling`的处理，输出大小就变为了14x14x32
+
+```
+h_pool=max_pool_2x2(h_conv1)
+```
+
+接着呢，同样的形式我们定义第二层卷积，本层我们的输入就是上一层的输出，本层我们的卷积核patch的大小是5x5，有32个featuremap所以输入就是32，输出呢我们定为64
+
+```
+W_conv2=weight_variable([5,5,32,64])
+b_conv2=bias_variable([64])
+```
+
+接着我们就可以定义卷积神经网络的第二个卷积层，这时的输出的大小就是14x14x64
+
+```
+h_conv2=tf.nn.relu(conv2d(h_pool1,W_conv2)+b_conv2)
+```
+
+最后也是一个pooling处理，输出大小为7x7x64
+
+```
+h_pool2=max_pool_2x2(h_conv2)
+```
+
+## 建立全连接层 
+
+好的，接下来我们定义我们的 fully connected layer,
+
+进入全连接层时, 我们通过`tf.reshape()`将`h_pool2`的输出值从一个三维的变为一维的数据, -1表示先不考虑输入图片例子维度, 将上一个输出结果展平.
+
+```
+#[n_samples,7,7,64]->>[n_samples,7*7*64]
+h_pool2_flat=tf.reshape(h_pool2,[-1,7*7*64]) 
+```
+
+此时`weight_variable`的`shape`输入就是第二个卷积层展平了的输出大小: 7x7x64， 后面的输出size我们继续扩大，定为1024
+
+```
+W_fc1=weight_variable([7*7*64,1024]) 
+b_fc1=bias_variable([1024])
+```
+
+然后将展平后的`h_pool2_flat`与本层的`W_fc1`相乘（注意这个时候不是卷积了）
+
+```
+h_fc1=tf.nn.relu(tf.matmul(h_pool2_flat,W_fc1)+b_fc1)
+```
+
+如果我们考虑过拟合问题，可以加一个dropout的处理
+
+```
+h_fc1_drop=tf.nn.dropout(h_fc1,keep_drop)
+```
+
+接下来我们就可以进行最后一层的构建了，好激动啊, 输入是1024，最后的输出是10个 (因为mnist数据集就是[0-9]十个类)，prediction就是我们最后的预测值
+
+```
+W_fc2=weight_variable([1024,10]) b_fc2=bias_variable([10])
+```
+
+然后呢我们用softmax分类器（多分类，输出是各个类的概率）,对我们的输出进行分类
+
+```
+prediction=tf.nn.softmax(tf.matmul(h_fc1_dropt,W_fc2),b_fc2)
+```
+
+## 选优化方法 
+
+接着呢我们利用交叉熵损失函数来定义我们的cost function
+
+```
+cross_entropy=tf.reduce_mean(
+    -tf.reduce_sum(ys*tf.log(prediction),
+    reduction_indices=[1]))
+```
+
+我们用`tf.train.AdamOptimizer()`作为我们的优化器进行优化，使我们的`cross_entropy`最小
+
+```
+train_step=tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+```
+
+接着呢就是和之前视频讲的一样喽 定义`Session`
+
+```
+sess=tf.Session()
+```
+
+初始化变量
+
+```
+# tf.initialize_all_variables() 这种写法马上就要被废弃
+# 替换成下面的写法:
+sess.run(tf.global_variables_initializer())
+```
+
+好啦接着就是训练数据啦，我们假定训练`1000`步，每`50`步输出一下准确率， 注意`sess.run()`时记得要用`feed_dict`给我们的众多 `placeholder` 喂数据哦.
+
+# 19.网络保存
+
+## 保存 
+
+`import`所需的模块, 然后建立神经网络当中的 `W` 和 `b`, 并初始化变量.
+
+```
+import tensorflow as tf
+import numpy as np
+
+## Save to file
+# remember to define the same dtype and shape when restore
+W = tf.Variable([[1,2,3],[3,4,5]], dtype=tf.float32, name='weights')
+b = tf.Variable([[1,2,3]], dtype=tf.float32, name='biases')
+
+# init= tf.initialize_all_variables() # tf 马上就要废弃这种写法
+# 替换成下面的写法:
+init = tf.global_variables_initializer()
+```
+
+保存时, 首先要建立一个 `tf.train.Saver()` 用来保存, 提取变量. 再创建一个名为`my_net`的文件夹, 用这个 `saver` 来保存变量到这个目录 `"my_net/save_net.ckpt"`.
+
+```
+saver = tf.train.Saver()
+
+with tf.Session() as sess:
+    sess.run(init)
+    save_path = saver.save(sess, "my_net/save_net.ckpt")
+    print("Save to path: ", save_path)
+
+"""    
+Save to path:  my_net/save_net.ckpt
+"""
+```
+
+## 提取 
+
+提取时, 先建立零时的`W` 和 `b`容器. 找到文件目录, 并用`saver.restore()`我们放在这个目录的变量.
+
+```
+# 先建立 W, b 的容器
+W = tf.Variable(np.arange(6).reshape((2, 3)), dtype=tf.float32, name="weights")
+b = tf.Variable(np.arange(3).reshape((1, 3)), dtype=tf.float32, name="biases")
+
+# 这里不需要初始化步骤 init= tf.initialize_all_variables()
+
+saver = tf.train.Saver()
+with tf.Session() as sess:
+    # 提取变量
+    saver.restore(sess, "my_net/save_net.ckpt")
+    print("weights:", sess.run(W))
+    print("biases:", sess.run(b))
+
+"""
+weights: [[ 1.  2.  3.]
+          [ 3.  4.  5.]]
+biases: [[ 1.  2.  3.]]
+"""
+```
+
+# 20.scope 命名方法
+
+## tf.name_scope() 
+
+在 Tensorflow 当中有两种途径生成变量 variable, 一种是 `tf.get_variable()`, 另一种是 `tf.Variable()`. 如果在 `tf.name_scope()` 的框架下使用这两种方式, 结果会如下.
+
+```
+import tensorflow as tf
+
+with tf.name_scope("a_name_scope"):
+    initializer = tf.constant_initializer(value=1)
+    var1 = tf.get_variable(name='var1', shape=[1], dtype=tf.float32, initializer=initializer)
+    var2 = tf.Variable(name='var2', initial_value=[2], dtype=tf.float32)
+    var21 = tf.Variable(name='var2', initial_value=[2.1], dtype=tf.float32)
+    var22 = tf.Variable(name='var2', initial_value=[2.2], dtype=tf.float32)
+
+
+with tf.Session() as sess:
+    sess.run(tf.initialize_all_variables())
+    print(var1.name)        # var1:0
+    print(sess.run(var1))   # [ 1.]
+    print(var2.name)        # a_name_scope/var2:0
+    print(sess.run(var2))   # [ 2.]
+    print(var21.name)       # a_name_scope/var2_1:0
+    print(sess.run(var21))  # [ 2.0999999]
+    print(var22.name)       # a_name_scope/var2_2:0
+    print(sess.run(var22))  # [ 2.20000005]
+```
+
+可以看出使用 `tf.Variable()` 定义的时候, 虽然 `name` 都一样, 但是为了不重复变量名, Tensorflow 输出的变量名并不是一样的. 所以, 本质上 `var2`, `var21`, `var22` 并不是一样的变量. 而另一方面, 使用`tf.get_variable()`定义的变量不会被`tf.name_scope()`当中的名字所影响.
+
+## tf.variable_scope() 
+
+如果想要达到重复利用变量的效果, 我们就要使用 `tf.variable_scope()`, 并搭配 `tf.get_variable()`这种方式产生和提取变量. 不像 `tf.Variable()` 每次都会产生新的变量, `tf.get_variable()` 如果遇到了同样名字的变量时, 它会单纯的提取这个同样名字的变量(避免产生新变量). 而在重复使用的时候, 一定要在代码中强调 `scope.reuse_variables()`, 否则系统将会报错, 以为你只是单纯的不小心重复使用到了一个变量.
+
+```
+with tf.variable_scope("a_variable_scope") as scope:
+    initializer = tf.constant_initializer(value=3)
+    var3 = tf.get_variable(name='var3', shape=[1], dtype=tf.float32, initializer=initializer)
+    scope.reuse_variables()
+    var3_reuse = tf.get_variable(name='var3',)
+    var4 = tf.Variable(name='var4', initial_value=[4], dtype=tf.float32)
+    var4_reuse = tf.Variable(name='var4', initial_value=[4], dtype=tf.float32)
+    
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+    print(var3.name)            # a_variable_scope/var3:0
+    print(sess.run(var3))       # [ 3.]
+    print(var3_reuse.name)      # a_variable_scope/var3:0
+    print(sess.run(var3_reuse)) # [ 3.]
+    print(var4.name)            # a_variable_scope/var4:0
+    print(sess.run(var4))       # [ 4.]
+    print(var4_reuse.name)      # a_variable_scope/var4_1:0
+    print(sess.run(var4_reuse)) # [ 4.]
+    
+```
+
+# 21.什么是批标准化 (Batch Normalization)
+
+## 普通数据标准化 
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB1.png)](https://morvanzhou.github.io/static/results/ML-intro/NB1.png)
+
+Batch Normalization, 批标准化, 和普通的数据标准化类似, 是将分散的数据统一的一种做法, 也是优化神经网络的一种方法. 在之前 Normalization 的简介视频中我们一提到, 具有统一规格的数据, 能让机器学习更容易学习到数据之中的规律.
+
+## 每层都做标准化 
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB2.png)](https://morvanzhou.github.io/static/results/ML-intro/NB2.png)
+
+在神经网络中, 数据分布对训练会产生影响. 比如某个神经元 x 的值为1, 某个 Weights 的初始值为 0.1, 这样后一层神经元计算结果就是 Wx = 0.1; 又或者 x = 20, 这样 Wx 的结果就为 2. 现在还不能看出什么问题, 但是, 当我们加上一层激励函数, 激活这个 Wx 值的时候, 问题就来了. 如果使用 像 tanh 的激励函数, Wx 的激活值就变成了 ~0.1 和 ~1, 接近于 1 的部已经处在了 激励函数的饱和阶段, 也就是如果 x 无论再怎么扩大, tanh 激励函数输出值也还是 接近1. 换句话说, 神经网络在初始阶段已经不对那些比较大的 x 特征范围 敏感了. 这样很糟糕, 想象我轻轻拍自己的感觉和重重打自己的感觉居然没什么差别, 这就证明我的感官系统失效了. 当然我们是可以用之前提到的对数据做 normalization 预处理, 使得输入的 x 变化范围不会太大, 让输入值经过激励函数的敏感部分. 但刚刚这个不敏感问题不仅仅发生在神经网络的输入层, 而且在隐藏层中也经常会发生.
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB3.png)](https://morvanzhou.github.io/static/results/ML-intro/NB3.png)
+
+只是时候 x 换到了隐藏层当中, 我们能不能对隐藏层的输入结果进行像之前那样的normalization 处理呢? 答案是可以的, 因为大牛们发明了一种技术, 叫做 batch normalization, 正是处理这种情况.
+
+## BN 添加位置 
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB4.png)](https://morvanzhou.github.io/static/results/ML-intro/NB4.png)
+
+Batch normalization 的 batch 是批数据, 把数据分成小批小批进行 stochastic gradient descent. 而且在每批数据进行前向传递 forward propagation 的时候, 对每一层都进行 normalization 的处理,
+
+## BN 效果 
+
+Batch normalization 也可以被看做一个层面. 在一层层的添加神经网络的时候, 我们先有数据 X, 再添加全连接层, 全连接层的计算结果会经过 激励函数 成为下一层的输入, 接着重复之前的操作. Batch Normalization (BN) 就被添加在每一个全连接和激励函数之间.
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB5.png)](https://morvanzhou.github.io/static/results/ML-intro/NB5.png)
+
+之前说过, 计算结果在进入激励函数前的值很重要, 如果我们不单单看一个值, 我们可以说, 计算结果值的分布对于激励函数很重要. 对于数据值大多分布在这个区间的数据, 才能进行更有效的传递. 对比这两个在激活之前的值的分布. 上者没有进行 normalization, 下者进行了 normalization, 这样当然是下者能够更有效地利用 tanh 进行非线性化的过程.
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB6.png)](https://morvanzhou.github.io/static/results/ML-intro/NB6.png)
+
+没有 normalize 的数据 使用 tanh 激活以后, 激活值大部分都分布到了饱和阶段, 也就是大部分的激活值不是-1, 就是1, 而 normalize 以后, 大部分的激活值在每个分布区间都还有存在. 再将这个激活后的分布传递到下一层神经网络进行后续计算, 每个区间都有分布的这一种对于神经网络就会更加有价值. Batch normalization 不仅仅 normalize 了一下数据, 他还进行了反 normalize 的手续. 为什么要这样呢?
+
+## BN 算法 
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB7.png)](https://morvanzhou.github.io/static/results/ML-intro/NB7.png)
+
+我们引入一些 batch normalization 的公式. 这三步就是我们在刚刚一直说的 normalization 工序, 但是公式的后面还有一个反向操作, 将 normalize 后的数据再扩展和平移. 原来这是为了让神经网络自己去学着使用和修改这个扩展参数 gamma, 和 平移参数 β, 这样神经网络就能自己慢慢琢磨出前面的 normalization 操作到底有没有起到优化的作用, 如果没有起到作用, 我就使用 gamma 和 belt 来抵消一些 normalization 的操作.
+
+[![批标准化 (Batch Normalization)](https://morvanzhou.github.io/static/results/ML-intro/NB8.png)](https://morvanzhou.github.io/static/results/ML-intro/NB8.png)
+
+最后我们来看看一张神经网络训练到最后, 代表了每层输出值的结果的分布图. 这样我们就能一眼看出 Batch normalization 的功效啦. 让每一层的值在有效的范围内传递下去.
+
+
+
+## 23.Batch Normalization 批标准化
+
+## 什么是 Batch Normalization 
+
+请参考我制作的 [Batch normalization 简介视频](https://morvanzhou.github.io/tutorials/machine-learning/ML-intro/3-08-batch-normalization/) Batch normalization 是一种解决深度神经网络层数太多, 而没办法有效前向传递(forward propagate)的问题. 因为每一层的输出值都会有不同的 均值(mean) 和 方差(deviation), 所以输出数据的分布也不一样, 如下图, 从左到右是每一层的输入数据分布, 上排的没有 Batch normalization, 下排的有 Batch normalization.
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_01.png)](https://morvanzhou.github.io/static/results/tensorflow/5_13_01.png)
+
+我们以前说过, 为了更有效的学习数据, 我们会对数据预处理, 进行 normalization (请参考我制作的 [为什么要特征标准化](https://morvanzhou.github.io/tutorials/machine-learning/ML-intro/3-02-normalization/)). 而现在请想象, 我们可以把 “每层输出的值” 都看成 “后面一层所接收的数据”. 对每层都进行一次 normalization 会不会更好呢? 这就是 Batch normalization 方法的由来.
+
+## 搭建网络 
+
+输入需要的模块和定义网络的结构
+
+```
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+
+ACTIVATION = tf.nn.relu # 每一层都使用 relu 
+N_LAYERS = 7            # 一共7层隐藏层
+N_HIDDEN_UNITS = 30     # 每个层隐藏层有 30 个神经元
+```
+
+使用 `build_net()` 功能搭建神经网络:
+
+```
+def built_net(xs, ys, norm):
+    def add_layer(inputs, in_size, out_size, activation_function=None):
+        # 添加层功能
+        Weights = tf.Variable(tf.random_normal([in_size, out_size], mean=0., stddev=1.))
+        biases = tf.Variable(tf.zeros([1, out_size]) + 0.1)
+        Wx_plus_b = tf.matmul(inputs, Weights) + biases
+        if activation_function is None:
+            outputs = Wx_plus_b
+        else:
+            outputs = activation_function(Wx_plus_b)
+        return outputs
+
+    fix_seed(1)
+
+    layers_inputs = [xs]    # 记录每层的 input
+
+    # loop 建立所有层
+    for l_n in range(N_LAYERS):
+        layer_input = layers_inputs[l_n]
+        in_size = layers_inputs[l_n].get_shape()[1].value
+
+        output = add_layer(
+            layer_input,    # input
+            in_size,        # input size
+            N_HIDDEN_UNITS, # output size
+            ACTIVATION,     # activation function
+        )
+        layers_inputs.append(output)    # 把 output 加入记录
+
+    # 建立 output layer
+    prediction = add_layer(layers_inputs[-1], 30, 1, activation_function=None)
+
+    cost = tf.reduce_mean(tf.reduce_sum(tf.square(ys - prediction), reduction_indices=[1]))
+    train_op = tf.train.GradientDescentOptimizer(0.001).minimize(cost)
+    return [train_op, cost, layers_inputs]
+```
+
+## 创建数据 
+
+创造数据并可视化数据:
+
+```
+x_data = np.linspace(-7, 10, 500)[:, np.newaxis]
+noise = np.random.normal(0, 8, x_data.shape)
+y_data = np.square(x_data) - 5 + noise
+
+# 可视化 input data
+plt.scatter(x_data, y_data)
+plt.show()
+```
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_02.png)](https://morvanzhou.github.io/static/results/tensorflow/5_13_02.png)
+
+## Batch Normalization 代码 
+
+为了实现 Batch Normalization, 我们要对每一层的代码进行修改, 给 `built_net` 和 `add_layer`都加上 `norm` 参数, 表示是否是 Batch Normalization 层:
+
+```
+def built_net(xs, ys, norm):
+    def add_layer(inputs, in_size, out_size, activation_function=None, norm=False):
+```
+
+然后每层的 `Wx_plus_b` 需要进行一次 batch normalize 的步骤, 这样输出到 `activation` 的 `Wx_plus_b` 就已经被 `normalize` 过了:
+
+```
+if norm:    # 判断书否是 BN 层
+    fc_mean, fc_var = tf.nn.moments(
+        Wx_plus_b,
+        axes=[0],   # 想要 normalize 的维度, [0] 代表 batch 维度
+                    # 如果是图像数据, 可以传入 [0, 1, 2], 相当于求[batch, height, width] 的均值/方差, 注意不要加入 channel 维度
+    )
+    scale = tf.Variable(tf.ones([out_size]))
+    shift = tf.Variable(tf.zeros([out_size]))
+    epsilon = 0.001
+    Wx_plus_b = tf.nn.batch_normalization(Wx_plus_b, fc_mean, fc_var, shift, scale, epsilon)
+    # 上面那一步, 在做如下事情:
+    # Wx_plus_b = (Wx_plus_b - fc_mean) / tf.sqrt(fc_var + 0.001)
+    # Wx_plus_b = Wx_plus_b * scale + shift
+    # 如果你已经看不懂了, 请去我最上面学习资料里的链接 (我制作的 Batch normalization 简介视频)
+```
+
+如果你是使用 batch 进行每次的更新, 那每个 batch 的 mean/var 都会不同, 所以我们可以使用 moving average 的方法记录并慢慢改进 mean/var 的值. 然后将修改提升后的 mean/var 放入 `tf.nn.batch_normalization()`. 而且在 test 阶段, 我们就可以直接调用最后一次修改的 mean/var 值进行测试, 而不是采用 test 时的 fc_mean/fc_var.
+
+```
+# 对这句进行扩充, 修改前:
+Wx_plus_b = tf.nn.batch_normalization(Wx_plus_b, fc_mean, fc_var, shift, scale, epsilon)
+
+# 修改后:
+ema = tf.train.ExponentialMovingAverage(decay=0.5)  # exponential moving average 的 decay 度
+def mean_var_with_update():
+    ema_apply_op = ema.apply([fc_mean, fc_var])
+    with tf.control_dependencies([ema_apply_op]):
+        return tf.identity(fc_mean), tf.identity(fc_var)
+mean, var = mean_var_with_update()      # 根据新的 batch 数据, 记录并稍微修改之前的 mean/var
+
+# 将修改后的 mean / var 放入下面的公式
+Wx_plus_b = tf.nn.batch_normalization(Wx_plus_b, mean, var, shift, scale, epsilon)
+```
+
+那如何确定我们是在 train 阶段还是在 test 阶段呢, 我们可以修改上面的算法, 想办法传入 `on_train` 参数, 你也可以把 `on_train` 定义成全局变量. (**注意: github 的代码中没有这一段, 想做 test 的同学们需要自己修改**)
+
+```
+# 修改前:
+mean, var = mean_var_with_update() 
+
+# 修改后:
+mean, var = tf.cond(on_train,    # on_train 的值是 True/False
+                    mean_var_with_update,   # 如果是 True, 更新 mean/var
+                    lambda: (               # 如果是 False, 返回之前 fc_mean/fc_var 的Moving Average
+                        ema.average(fc_mean), 
+                        ema.average(fc_var)
+                        )    
+                    )
+```
+
+同样, 我们也可以在输入数据 `xs` 时, 给它做一个 normalization, **同样, 如果是最 batch data 来训练的话, 要重复上述的记录修改 mean/var 的步骤**:
+
+```
+    if norm:
+        # BN for the first input
+        fc_mean, fc_var = tf.nn.moments(
+            xs,
+            axes=[0],
+        )
+        scale = tf.Variable(tf.ones([1]))
+        shift = tf.Variable(tf.zeros([1]))
+        epsilon = 0.001
+        xs = tf.nn.batch_normalization(xs, fc_mean, fc_var, shift, scale, epsilon)
+```
+
+然后我们把在建立网络的循环中的这一步加入 `norm` 这个参数:
+
+```
+output = add_layer(
+            layer_input,    # input
+            in_size,        # input size
+            N_HIDDEN_UNITS, # output size
+            ACTIVATION,     # activation function
+            norm,           # normalize before activation
+        )
+```
+
+## 对比有无 BN 
+
+搭建两个神经网络, 一个没有 BN, 一个有 BN:
+
+```
+xs = tf.placeholder(tf.float32, [None, 1])  # [num_samples, num_features]
+ys = tf.placeholder(tf.float32, [None, 1])
+
+train_op, cost, layers_inputs = built_net(xs, ys, norm=False)   # without BN
+train_op_norm, cost_norm, layers_inputs_norm = built_net(xs, ys, norm=True) # with BN
+```
+
+训练神经网络:
+
+代码中的 `plot_his()` 不会在这里讲解, 请自己在[全套代码中查看](https://github.com/MorvanZhou/tutorials/blob/master/tensorflowTUT/tf23_BN/tf23_BN.py).
+
+```
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+
+# 记录两种网络的 cost 变化
+cost_his = []
+cost_his_norm = []
+record_step = 5
+
+plt.ion()
+plt.figure(figsize=(7, 3))
+for i in range(251):
+    if i % 50 == 0:
+        # 每层在 activation 之前计算结果值的分布
+        all_inputs, all_inputs_norm = sess.run([layers_inputs, layers_inputs_norm], feed_dict={xs: x_data, ys: y_data})
+        plot_his(all_inputs, all_inputs_norm)
+
+    sess.run(train_op, feed_dict={xs: x_data, ys: y_data})
+    sess.run(train_op_norm, feed_dict={xs: x_data, ys: y_data})
+    if i % record_step == 0:
+        # 记录 cost
+        cost_his.append(sess.run(cost, feed_dict={xs: x_data, ys: y_data}))
+        cost_his_norm.append(sess.run(cost_norm, feed_dict={xs: x_data, ys: y_data}))
+
+plt.ioff()
+plt.figure()
+plt.plot(np.arange(len(cost_his))*record_step, np.array(cost_his), label='no BN')     # no norm
+plt.plot(np.arange(len(cost_his))*record_step, np.array(cost_his_norm), label='BN')   # norm
+plt.legend()
+plt.show()
+```
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_03.gif)](https://morvanzhou.github.io/static/results/tensorflow/5_13_03.gif)
+
+可以看出, 没有用 BN 的时候, 每层的值迅速全部都变为 0, 也可以说, 所有的神经元都已经死了. 而有 BN, `relu` 过后, 每层的值都能有一个比较好的分布效果, 大部分神经元都还活着. (看不懂了? 没问题, 再去看一遍[我制作的 Batch normalization 简介视频](https://morvanzhou.github.io/tutorials/machine-learning/ML-intro/3-08-batch-normalization/)).
+
+Relu 激励函数的图在这里:
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_04.png)](https://morvanzhou.github.io/static/results/tensorflow/5_13_04.png)
+
+我们也看看使用 relu cost 的对比:
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_05.png)](https://morvanzhou.github.io/static/results/tensorflow/5_13_05.png)
+
+因为没有使用 NB 的网络, 大部分神经元都死了, 所以连误差曲线都没了.
+
+如果使用不同的 `ACTIVATION` 会怎么样呢? 不如把 `relu` 换成 `tanh`:
+
+```
+ACTIVATION = tf.nn.tanh
+```
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_06.gif)](https://morvanzhou.github.io/static/results/tensorflow/5_13_06.gif)
+
+可以看出, 没有 NB, 每层的值迅速全部都饱和, 都跑去了 -1/1 这个饱和区间, 有 NB, 即使前一层因变得相对饱和, 但是后面几层的值都被 normalize 到有效的不饱和区间内计算. 确保了一个活的神经网络.
+
+tanh 激励函数的图在这里:
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_07.gif)](https://morvanzhou.github.io/static/results/tensorflow/5_13_07.gif)
+
+最后我们看一下使用 tanh 的误差对比:
+
+[![Batch Normalization 批标准化](https://morvanzhou.github.io/static/results/tensorflow/5_13_08.png)](https://morvanzhou.github.io/static/results/tensorflow/5_13_08.png)
